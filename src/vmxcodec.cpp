@@ -92,6 +92,23 @@ VMX_API void VMX_SetEncodingParameters(VMX_INSTANCE* instance, int frameMin, int
 	instance->DCShift = dcShift;
 }
 
+// Number of 0xFF bytes kept immediately after every loaded stream so the entropy
+// decoder always reads deterministic guard data, even for empty or very short
+// streams. The reader refills in sizeof(buffer_t) (8-byte) chunks and looks at
+// most 12 bits ahead, so 64 bytes leave eight refills of slack.
+static const int StreamGuardBytes = 64;
+
+// Re-establish the guard just past a loaded stream. `len` is clamped to
+// MaxStreamLength by the caller; for AC streams the reserved tail past
+// MaxStreamLength is already 0xFF and survives every load, so this only needs
+// to cover the gap between the loaded length and that tail.
+static inline void VMX_GuardLoadedStream(VMX_SLICE_DATA& d, uint32_t len)
+{
+	int room = d.MaxStreamLength - (int)len;
+	int guard = room < StreamGuardBytes ? room : StreamGuardBytes;
+	if (guard > 0) memset(d.Stream + len, 0xFF, guard);
+}
+
 void VMX_ResetData(VMX_SLICE_DATA* s)
 {
 	s->StreamPos = s->Stream;
@@ -433,8 +450,17 @@ VMX_API VMX_INSTANCE* VMX_Create(VMX_SIZE dimensions, VMX_PROFILE profile, VMX_C
 		instance->Slices[i]->DC.StreamLength = 0;
 		instance->Slices[i]->AC.MaxStreamLength = acLen - protectionBytes;
 		instance->Slices[i]->DC.MaxStreamLength = dcLen;
-		memset(instance->Slices[i]->DC.Stream, 0xFF, dcLen);
-		memset(instance->Slices[i]->AC.Stream, 0xFF, acLen);
+		//Deterministic guards instead of filling the whole streams: the decoder only
+		//reads the head (VMX_ResetData) and can overread a little past the end of a
+		//loaded stream. Filling the middle added nothing: every load overwrites it,
+		//and VMX_LoadFrom re-writes the guard after the loaded length. The AC tail
+		//is reserved by MaxStreamLength so it survives every frame. DC reserves no
+		//tail, so its tail guard remains best-effort, as before.
+		memset(instance->Slices[i]->DC.Stream, 0xFF, dcLen < StreamGuardBytes ? dcLen : StreamGuardBytes);
+		memset(instance->Slices[i]->AC.Stream, 0xFF, acLen < StreamGuardBytes ? acLen : StreamGuardBytes);
+		memset(instance->Slices[i]->AC.Stream + (acLen - protectionBytes), 0xFF, protectionBytes);
+		if (dcLen >= protectionBytes)
+			memset(instance->Slices[i]->DC.Stream + (dcLen - protectionBytes), 0xFF, protectionBytes);
 
 		instance->Slices[i]->PixelSize = { dimensions.width, VMX_SLICE_HEIGHT };
 		if (i == instance->SliceCount - 1) {
@@ -543,6 +569,7 @@ VMX_API VMX_ERR VMX_LoadFrom(VMX_INSTANCE* instance, BYTE* data, int dataLen)
 				if (len > d.MaxStreamLength) return VMX_ERR_BUFFER_OVERFLOW;
 				memcpy(d.Stream, b, len);
 				b += len;
+				VMX_GuardLoadedStream(d, len);
 				instance->Slices[i]->DC.StreamLength = len;
 			}
 			//We may be loading a preview only image which only has DC
@@ -558,6 +585,7 @@ VMX_API VMX_ERR VMX_LoadFrom(VMX_INSTANCE* instance, BYTE* data, int dataLen)
 					if (len > d.MaxStreamLength) return VMX_ERR_BUFFER_OVERFLOW;
 					memcpy(d.Stream, b, len);
 					b += len;
+					VMX_GuardLoadedStream(d, len);
 					instance->Slices[i]->AC.StreamLength = len;
 				}
 			}
