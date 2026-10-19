@@ -401,10 +401,30 @@ VMX_API VMX_INSTANCE* VMX_Create(VMX_SIZE dimensions, VMX_PROFILE profile, VMX_C
 	instance->Planes[2].Data = (BYTE*)_mm_malloc(planeLen, VMX_ALIGNMENT);
 	instance->Planes[3].Data = (BYTE*)_mm_malloc(planeLen, VMX_ALIGNMENT);
 
-	memset(instance->Planes[0].Data, 0, planeLen);
-	memset(instance->Planes[1].Data, 128, planeLen);
-	memset(instance->Planes[2].Data, 128, planeLen);
-	memset(instance->Planes[3].Data, 255, planeLen);
+	//The planes start as deterministic black / neutral chroma / opaque alpha; skipped
+	//blocks rely on that content. Fill them from the instance's own task threads: at
+	//8K that is 4 x planeLen (about 1 GB) of fresh pages, and a single-threaded fill
+	//is dominated by page faults. The pool below has already been created with
+	//instance->Threads workers, so this adds no threads or other resources; the
+	//thread count is still configurable through VMX_SetThreads after creation.
+	{
+		const BYTE fillValues[4] = { 0, 128, 128, 255 };
+		const int workers = instance->Threads;
+		const int chunk = (planeLen + workers - 1) / workers;
+		for (int t = 0; t < workers; t++)
+		{
+			instance->Tasks->tasks[t]->Push([instance, t, chunk, planeLen, fillValues] {
+				const int start = t * chunk;
+				const int len = start + chunk > planeLen ? planeLen - start : chunk;
+				if (len > 0)
+				{
+					for (int p = 0; p < 4; p++)
+						memset(instance->Planes[p].Data + start, fillValues[p], len);
+				}
+			});
+		}
+		for (int t = 0; t < workers; t++) instance->Tasks->tasks[t]->Join();
+	}
 
 	instance->Planes[0].DataLowerPreview = instance->Planes[0].Data + ((instance->Planes[0].Stride) * (instance->AlignedHeight >> 4));
 	instance->Planes[1].DataLowerPreview = instance->Planes[1].Data + ((instance->Planes[1].Stride) * (instance->AlignedHeight >> 4));
