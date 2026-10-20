@@ -1606,7 +1606,7 @@ void VMX_DecodePlaneInternal128(VMX_INSTANCE* instance, VMX_PLANE* pPlane, VMX_S
 				bc += 2;
 				GETBITS(dataDC, bc, val);
 				TempBlock2[0] = GetIntFrom2MagSign((val - 1));
-				TempBlock2[0] <<= dcshift;
+				TempBlock2[0] = static_cast<short>(static_cast<int>(TempBlock2[0]) * (1 << dcshift));
 			}
 
 			TempBlock = TempBlock2;
@@ -1727,7 +1727,7 @@ void VMX_DecodePlaneInternal128_16(VMX_INSTANCE* instance, VMX_PLANE* pPlane, VM
 				bc += 2;
 				GETBITS(dataDC, bc, val);
 				TempBlock2[0] = GetIntFrom2MagSign((val - 1));
-				TempBlock2[0] <<= dcshift;
+				TempBlock2[0] = static_cast<short>(static_cast<int>(TempBlock2[0]) * (1 << dcshift));
 			}
 
 			TempBlock = TempBlock2;
@@ -1797,7 +1797,7 @@ void VMX_DecodePlanePreviewInternal(VMX_INSTANCE* instance, VMX_PLANE* pPlane, V
 				bc += 2;
 				GETBITS(dataDC, bc, val);
 				dc = GetIntFrom2MagSign((val - 1));
-				dc <<= dcshift;
+				dc = static_cast<short>(static_cast<int>(dc) * (1 << dcshift));
 			}
 
 			dc += dcPred;
