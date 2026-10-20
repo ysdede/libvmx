@@ -2652,7 +2652,7 @@ void VMX_DecodePlaneInternal256(VMX_INSTANCE* instance, VMX_PLANE * pPlane, VMX_
 					bc += 2;
 					GETBITS(dataDC, bc, val);
 					CurrentBlock[0] = GetIntFrom2MagSign((val - 1));
-					CurrentBlock[0] <<= dcshift;
+					CurrentBlock[0] = static_cast<short>(static_cast<int>(CurrentBlock[0]) * (1 << dcshift));
 				}
 				CurrentBlock[0] += dcPred;
 				dcPred = CurrentBlock[0];
@@ -2793,7 +2793,7 @@ void VMX_DecodePlaneInternal256_16(VMX_INSTANCE* instance, VMX_PLANE* pPlane, VM
 					bc += 2;
 					GETBITS(dataDC, bc, val);
 					CurrentBlock[0] = GetIntFrom2MagSign((val - 1));
-					CurrentBlock[0] <<= dcshift;
+					CurrentBlock[0] = static_cast<short>(static_cast<int>(CurrentBlock[0]) * (1 << dcshift));
 				}
 				CurrentBlock[0] += dcPred;
 				dcPred = CurrentBlock[0];

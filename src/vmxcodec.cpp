@@ -89,7 +89,8 @@ VMX_API void VMX_SetEncodingParameters(VMX_INSTANCE* instance, int frameMin, int
 	instance->TargetBytesPerFrameMin = frameMin;
 	instance->TargetBytesPerFrameMax = frameMax;
 	instance->MinQuality = minQuality;
-	instance->DCShift = dcShift;
+	// DC coefficients are 16-bit. Keep reconstruction shifts within a defined range.
+	instance->DCShift = dcShift < 0 ? 0 : (dcShift > 15 ? 15 : dcShift);
 }
 
 // Number of 0xFF bytes kept immediately after every loaded stream so the entropy
@@ -527,7 +528,7 @@ VMX_API VMX_INSTANCE* VMX_Create(VMX_SIZE dimensions, VMX_PROFILE profile, VMX_C
 
 #define CHECKBUFF(checkNumBytes) \
 { \
-	if ((b + checkNumBytes) > maxB) { return VMX_ERR_BUFFER_OVERFLOW; } \
+	if ((size_t)(maxB - b) < (size_t)(checkNumBytes)) { return VMX_ERR_BUFFER_OVERFLOW; } \
 } 
 
 #define CHECKBUFF_SAVE(checkNumBytes) \
@@ -552,7 +553,7 @@ VMX_API VMX_ERR VMX_LoadFrom(VMX_INSTANCE* instance, BYTE* data, int dataLen)
 {
 	if (!instance) return VMX_ERR_INVALID_INSTANCE;
 	if (!data) return VMX_ERR_INVALID_PARAMETERS;
-	if (!dataLen) return VMX_ERR_INVALID_PARAMETERS;
+	if (dataLen <= 0) return VMX_ERR_INVALID_PARAMETERS;
 
 	BYTE* b = data;
 	BYTE* maxB = data + dataLen;
@@ -569,6 +570,7 @@ VMX_API VMX_ERR VMX_LoadFrom(VMX_INSTANCE* instance, BYTE* data, int dataLen)
 		{
 			offset = 2;
 			dcshift = b[1];
+			if (dcshift > 15) return VMX_ERR_INVALID_PARAMETERS;
 		}
 		format = b[offset] - 1;
 		sliceCount = b[offset + 2];
